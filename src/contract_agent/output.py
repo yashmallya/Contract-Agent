@@ -16,6 +16,22 @@ def _normalize_liability(liability: Any) -> Dict[str, Any]:
         "risk_type", normalized.get("risk_type") or normalized.get("obligation_type") or "Liability"
     )
     normalized["clause_text"] = normalized.get("clause_text") or ""
+    normalized.setdefault("resolution", normalized.get("resolution") or normalized.get("recommendation") or "")
+    normalized.setdefault("plain_english", normalized.get("plain_english") or normalized.get("reason") or "")
+    return normalized
+
+
+def _normalize_red_flag(red_flag: Any) -> Dict[str, Any]:
+    normalized = dict(red_flag) if isinstance(red_flag, dict) else {"description": str(red_flag)}
+    normalized.setdefault("category", normalized.get("category") or "Lease Risk")
+    normalized.setdefault("description", normalized.get("description") or "")
+    normalized.setdefault("severity", normalized.get("severity") or "Moderate")
+    normalized.setdefault("why_problematic", normalized.get("why_problematic") or "")
+    normalized.setdefault("suggested_fix", normalized.get("suggested_fix") or "")
+    normalized.setdefault("resolution", normalized.get("resolution") or normalized.get("suggested_fix") or "")
+    normalized.setdefault(
+        "plain_english", normalized.get("plain_english") or normalized.get("why_problematic") or ""
+    )
     return normalized
 
 
@@ -27,12 +43,16 @@ def format_output(summary: str, liabilities: list, red_flags: list, overall_scor
     for liability in liabilities or []:
         normalized_liabilities.append(_normalize_liability(liability))
 
+    normalized_red_flags = []
+    for red_flag in metrics.get("red_flags", []):
+        normalized_red_flags.append(_normalize_red_flag(red_flag))
+
     data = {
         "contract_summary": summary,
         "overall_risk_score": overall_score,
         "risk_level": risk_level,
         "liability_clauses": normalized_liabilities,
-        "red_flags": metrics.get("red_flags", []),
+        "red_flags": normalized_red_flags,
         "asymmetry_ratio": metrics.get("asymmetry_ratio"),
         "uncapped_parties": metrics.get("uncapped_parties", []),
         "illusory_cap": metrics.get("illusory_cap", False),

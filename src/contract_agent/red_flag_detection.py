@@ -1,24 +1,20 @@
-"""Red Flag Detection Agent
+"""Red Flag Detection Agent.
 
-Implements the improved rulebook and interaction detection (layers 2-4).
+Lease-focused red flag rules with plain-language explanations and resolutions.
 """
 
 from typing import Any, Dict, List, Tuple
 import re
 
-TERMINATION_PENALTY_PATTERN = re.compile(r"termination.*?(?:penalt(?:y|ies)|fee).*?(?:([0-9]{1,3})%)")
-AUTO_RENEW_NOTICE_PATTERN = re.compile(r"auto-?renew.*?notice.*?(?:([0-9]{1,3})\s*days?)")
-CONTROL_TOPICS = ["defense", "settlement", "assignment", "price revision", "termination", "arbitrat"]
-ILLUSORY_CAP_KEYWORDS = [
-    "data breach",
-    "data loss",
-    "regulat",
-    "third-party",
+DAY_PATTERN = re.compile(r"(\d{1,3})\s*day")
+PERCENT_PATTERN = re.compile(r"(\d{1,3})\s*%")
+ILLUSORY_CAP_KEYWORDS = (
+    "gross negligence",
+    "willful misconduct",
     "third party",
-    "ip infringe",
-    "intellectual property",
+    "regulatory",
     "indemnif",
-]
+)
 
 
 def classify_indemnity_tier(clause_text: str) -> int:
@@ -29,32 +25,51 @@ def classify_indemnity_tier(clause_text: str) -> int:
         return 4
     if "other party negligence" in text_lower or "negligence of" in text_lower:
         return 3
-    if "third party" in text_lower and "claim" in text_lower:
-        return 1
-    if "any and all" in text_lower or "broad" in text_lower:
+    if "any and all" in text_lower:
         return 2
     return 1
 
 
+def _add_flag(
+    red_flags: List[Dict[str, Any]],
+    *,
+    category: str,
+    description: str,
+    why: str,
+    fix: str,
+    severity: str,
+) -> None:
+    red_flags.append(
+        {
+            "category": category,
+            "description": description,
+            "why_problematic": why,
+            "suggested_fix": fix,
+            "resolution": fix,
+            "severity": severity,
+        }
+    )
+
+
 def compute_exposure_estimate(liabilities: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Estimate simple exposure buckets by party."""
-    totals = {}
-    uncapped = {}
+    totals: Dict[str, float] = {}
+    uncapped: Dict[str, bool] = {}
     for liability in liabilities:
         party = liability.get("obligated_party") or "unknown"
         cap = liability.get("cap")
-        exposure = 0
-        if liability.get("financial_exposure"):
-            try:
+        exposure = 0.0
+        try:
+            if liability.get("financial_exposure"):
                 exposure = float(liability.get("financial_exposure"))
-            except Exception:
-                exposure = 0
+        except Exception:
+            exposure = 0.0
 
         if cap:
             try:
-                totals[party] = totals.get(party, 0) + float(cap)
+                totals[party] = totals.get(party, 0.0) + float(cap)
             except Exception:
-                totals[party] = totals.get(party, 0) + exposure
+                totals[party] = totals.get(party, 0.0) + exposure
         else:
             uncapped[party] = True
 
@@ -62,61 +77,60 @@ def compute_exposure_estimate(liabilities: List[Dict[str, Any]]) -> Dict[str, An
 
 
 def detect_illusory_cap(liabilities: List[Dict[str, Any]]) -> Tuple[bool, List[str]]:
-    """Detect if caps are undermined by carve-outs/exceptions."""
+    """Detect if liability caps are weakened by broad carve-outs."""
     reasons = []
     cap_exists = any(liability.get("cap") for liability in liabilities)
     if not cap_exists:
-        return (False, [])
+        return False, []
 
     for liability in liabilities:
-        exceptions_text = " ".join(liability.get("exceptions") or "").lower()
+        exceptions_text = " ".join(liability.get("exceptions") or []).lower()
         for keyword in ILLUSORY_CAP_KEYWORDS:
             if keyword in exceptions_text:
                 reasons.append(
-                    f"Cap carve-out mentions '{keyword}' in clause: {liability.get('clause_text')[:120]}"
+                    f"Cap carve-out includes '{keyword}' which can reopen large uncapped claims."
                 )
 
-    return (len(reasons) > 0, reasons)
+    return len(reasons) > 0, reasons
 
 
 def _append_indemnity_flags(liabilities: List[Dict[str, Any]], red_flags: List[Dict[str, Any]]) -> int:
     highest_indemnity_tier = 0
     for liability in liabilities:
-        tier = classify_indemnity_tier(liability.get("clause_text", ""))
-        if tier >= 3:
-            severity = "High" if tier == 3 else "Critical"
-            red_flags.append(
-                {
-                    "category": "Indemnity",
-                    "description": liability.get("clause_text"),
-                    "why_problematic": f"Indemnity tier {tier}",
-                    "suggested_fix": "Narrow scope; add cap",
-                    "severity": severity,
-                }
-            )
+        clause_text = liability.get("clause_text", "")
+        tier = classify_indemnity_tier(clause_text)
         highest_indemnity_tier = max(highest_indemnity_tier, tier)
+        if tier < 3:
+            continue
+
+        severity = "High" if tier == 3 else "Critical"
+        _add_flag(
+            red_flags,
+            category="Indemnity",
+            description=clause_text,
+            why="This indemnity clause is very broad and could expose the tenant to large third-party costs.",
+            fix="Limit indemnity to direct damages caused by your fault and add a clear financial cap.",
+            severity=severity,
+        )
     return highest_indemnity_tier
 
 
 def _compute_asymmetry(
     liabilities: List[Dict[str, Any]], totals: Dict[str, float], uncapped: Dict[str, bool]
 ) -> Tuple[Any, Any]:
-    parties = list(set([liability.get("obligated_party") or "unknown" for liability in liabilities]))
+    parties = list({liability.get("obligated_party") or "unknown" for liability in liabilities})
     asymmetry_ratio = None
     asymmetry_flag = None
-
-    a_val = totals.get(parties[0], 0) if parties else 0
-    b_val = totals.get(parties[1], 0) if len(parties) > 1 else 0
     try:
-        if parties and len(parties) > 1:
-            a_val = totals.get(parties[0], 0) or 0
-            b_val = totals.get(parties[1], 0) or 0
+        if len(parties) > 1:
+            a_val = totals.get(parties[0], 0.0) or 0.0
+            b_val = totals.get(parties[1], 0.0) or 0.0
             if b_val == 0 and uncapped.get(parties[0]):
                 asymmetry_ratio = float("inf")
             elif b_val == 0:
                 asymmetry_ratio = float("inf") if uncapped.get(parties[0]) else (a_val and float("inf"))
             else:
-                asymmetry_ratio = (a_val or 0) / (b_val or 1)
+                asymmetry_ratio = (a_val or 0.0) / (b_val or 1.0)
 
             if asymmetry_ratio and asymmetry_ratio > 5:
                 asymmetry_flag = "Critical"
@@ -124,178 +138,179 @@ def _compute_asymmetry(
                 asymmetry_flag = "High"
     except Exception:
         asymmetry_ratio = None
-
     return asymmetry_ratio, asymmetry_flag
 
 
-def _detect_termination_risk(obligation_graph: List[Dict[str, Any]]) -> Tuple[int, bool, Any, int]:
-    termination_count = 0
-    acceleration = False
-    auto_renewal_notice = None
-    termination_penalty_pct = 0
-
+def _detect_lease_specific_flags(obligation_graph: List[Dict[str, Any]], red_flags: List[Dict[str, Any]]) -> None:
+    seen: set[tuple[str, str]] = set()
     for obligation in obligation_graph:
-        clause_text = obligation.get("clause_text", "").lower()
-        if "termination for convenience" in clause_text or "termination for convenience" in clause_text:
-            termination_count += 1
-        if "accelerat" in clause_text:
-            acceleration = True
+        clause_text = obligation.get("clause_text", "")
+        text_lower = clause_text.lower()
+        percent_match = PERCENT_PATTERN.search(text_lower)
+        percent = int(percent_match.group(1)) if percent_match else 0
+        day_match = DAY_PATTERN.search(text_lower)
+        days = int(day_match.group(1)) if day_match else 0
 
-        penalty_match = TERMINATION_PENALTY_PATTERN.search(clause_text)
-        if penalty_match:
-            try:
-                termination_penalty_pct = max(termination_penalty_pct, int(penalty_match.group(1)))
-            except Exception:
-                pass
+        def add_once(category: str, why: str, fix: str, severity: str) -> None:
+            key = (category, clause_text[:120])
+            if key in seen:
+                return
+            seen.add(key)
+            _add_flag(
+                red_flags,
+                category=category,
+                description=clause_text,
+                why=why,
+                fix=fix,
+                severity=severity,
+            )
 
-        notice_match = AUTO_RENEW_NOTICE_PATTERN.search(clause_text)
-        if notice_match:
-            auto_renewal_notice = int(notice_match.group(1))
+        if "rent" in text_lower and ("escalat" in text_lower or "cpi" in text_lower or "increase" in text_lower):
+            if "cap" not in text_lower:
+                add_once(
+                    "Rent Escalation",
+                    "Rent can rise unpredictably over time, which makes budgeting difficult.",
+                    "Add an annual increase cap (for example 3%-5%) and define an objective formula.",
+                    "High",
+                )
 
-    return termination_count, acceleration, auto_renewal_notice, termination_penalty_pct
+        if any(k in text_lower for k in ("cam", "common area maintenance", "operating expense", "triple net")):
+            if any(k in text_lower for k in ("any and all", "sole discretion", "as determined by landlord", "all costs")):
+                add_once(
+                    "Pass-Through Costs",
+                    "The tenant may absorb broad building costs beyond base rent.",
+                    "Limit reimbursable costs, cap annual increases, and require audit rights.",
+                    "High",
+                )
+
+        if any(k in text_lower for k in ("repair", "maintenance")) and any(
+            k in text_lower for k in ("structural", "roof", "foundation", "hvac")
+        ):
+            add_once(
+                "Major Repair Responsibility",
+                "You may be paying for major building repairs that are typically the landlord's responsibility.",
+                "Move structural and major system repairs to landlord responsibility or set a hard cap.",
+                "High",
+            )
+
+        if any(k in text_lower for k in ("personal guarantee", "personally liable", "guarantor", "guarantee")):
+            add_once(
+                "Personal Guarantee",
+                "Your personal assets may be at risk if lease payments are missed.",
+                "Limit the guarantee by dollar amount and duration, with automatic release conditions.",
+                "Critical",
+            )
+
+        if "holdover" in text_lower and percent >= 150:
+            add_once(
+                "Holdover Penalty",
+                "Staying after lease end may trigger heavy penalty rent.",
+                "Reduce holdover rate to 125%-150% and include a short grace period.",
+                "High" if percent < 200 else "Critical",
+            )
+
+        if "default" in text_lower and "cure" in text_lower and days and days <= 5:
+            add_once(
+                "Short Cure Window",
+                "You may have too little time to fix a default before stronger remedies apply.",
+                "Set cure periods to at least 10-15 days for payment defaults and longer for non-payment defaults.",
+                "Critical",
+            )
+
+        if any(k in text_lower for k in ("accelerat", "all remaining rent", "entire balance due")):
+            add_once(
+                "Accelerated Rent",
+                "After default, you could owe most or all future rent immediately.",
+                "Remove acceleration language or require landlord to mitigate and credit replacement rent.",
+                "Critical",
+            )
+
+        if any(k in text_lower for k in ("enter", "entry", "access")) and any(
+            k in text_lower for k in ("without notice", "at any time", "any time")
+        ):
+            add_once(
+                "Landlord Entry Rights",
+                "Unrestricted access can disrupt operations and reduce privacy.",
+                "Require prior written notice except genuine emergencies and limit entry to business hours.",
+                "Moderate",
+            )
+
+        if any(k in text_lower for k in ("sublease", "sublet", "assign")) and any(
+            k in text_lower for k in ("sole discretion", "absolute discretion", "may withhold consent")
+        ):
+            add_once(
+                "Transfer Restrictions",
+                "You may be blocked from assigning or subleasing even when reasonable.",
+                "Require landlord consent not to be unreasonably withheld, delayed, or conditioned.",
+                "High",
+            )
+
+        if "security deposit" in text_lower and any(k in text_lower for k in ("non-refundable", "forfeit", "waive")):
+            add_once(
+                "Deposit Forfeiture",
+                "You may lose your security deposit more easily than expected.",
+                "Make the deposit refundable, require itemized deductions, and set a clear return deadline.",
+                "High",
+            )
+
+        if "relocat" in text_lower and "landlord" in text_lower:
+            add_once(
+                "Relocation Right",
+                "The landlord may force relocation, which can hurt business continuity.",
+                "Limit relocation to equivalent space, landlord-paid costs, and tenant approval rights.",
+                "High",
+            )
+
+        if any(k in text_lower for k in ("late fee", "interest")) and percent >= 18:
+            add_once(
+                "Late Charges",
+                "High interest or late fees can quickly increase total debt.",
+                "Cap late fees, reduce interest, and add a short grace period.",
+                "High",
+            )
 
 
 def detect_red_flags(
     liabilities: List[Dict[str, Any]], obligation_graph: List[Dict[str, Any]]
 ) -> Dict[str, Any]:
-    """Return red flags and supporting risk metrics."""
-    red_flags = []
+    """Return lease-focused red flags and supporting metrics."""
+    red_flags: List[Dict[str, Any]] = []
 
     highest_indemnity_tier = _append_indemnity_flags(liabilities, red_flags)
     illusory, reasons = detect_illusory_cap(liabilities)
     if illusory:
-        red_flags.append(
-            {
-                "category": "Liability Cap",
-                "description": "Liability cap undermined by carve-outs",
-                "why_problematic": "; ".join(reasons),
-                "suggested_fix": "Remove carve-outs or include them in cap",
-                "severity": "Critical",
-            }
+        _add_flag(
+            red_flags,
+            category="Liability Cap",
+            description="Liability cap may be weakened by carve-outs.",
+            why="Some exceptions appear broad enough to bypass the cap for major claims.",
+            fix="Narrow carve-outs and keep a clear overall cap for predictable downside.",
+            severity="Critical",
         )
+
+    _detect_lease_specific_flags(obligation_graph, red_flags)
 
     exp = compute_exposure_estimate(liabilities)
     totals = exp.get("totals", {})
     uncapped = exp.get("uncapped", {})
     asym_ratio, asym_flag = _compute_asymmetry(liabilities, totals, uncapped)
 
-    termination_count, acceleration, auto_renewal_notice, termination_penalty_pct = _detect_termination_risk(
-        obligation_graph
-    )
-    if (
-        (termination_count >= 1 and acceleration)
-        or (termination_penalty_pct > 100)
-        or (auto_renewal_notice and auto_renewal_notice > 60)
-    ):
-        red_flags.append(
-            {
-                "category": "Termination",
-                "description": "Termination financial trap detected",
-                "why_problematic": (
-                    f"acceleration={acceleration}, "
-                    f"penalty_pct={termination_penalty_pct}, "
-                    f"auto_renewal_notice={auto_renewal_notice}"
-                ),
-                "suggested_fix": "Cap penalties; extend cure periods",
-                "severity": (
-                    "Critical"
-                    if termination_penalty_pct > 100 or (termination_count >= 1 and acceleration)
-                    else "High"
-                ),
-            }
-        )
-
-    compound_risk = False
-    for obligation in obligation_graph:
-        clause_text = obligation.get("clause_text", "").lower()
-        if "interest" in clause_text and "%" in clause_text and "compound" in clause_text:
-            compound_risk = True
-    if compound_risk:
-        red_flags.append(
-            {
-                "category": "Financial",
-                "description": "Compounded interest detected",
-                "why_problematic": "Compounds exposure over time",
-                "suggested_fix": "Limit interest rate and compounding",
-                "severity": "High",
-            }
-        )
-
-    for obligation in obligation_graph:
-        clause_text = obligation.get("clause_text", "").lower()
-        if "assign" in clause_text and ("background" in clause_text or "intellectual property" in clause_text):
-            red_flags.append(
-                {
-                    "category": "IP",
-                    "description": obligation.get("clause_text"),
-                    "why_problematic": "Background IP assignment or broad rights",
-                    "suggested_fix": "Limit scope and provide compensation",
-                    "severity": "Critical",
-                }
-            )
-        if "use data" in clause_text or "data for any purpose" in clause_text or "commercial" in clause_text and "data" in clause_text:
-            red_flags.append(
-                {
-                    "category": "Data",
-                    "description": obligation.get("clause_text"),
-                    "why_problematic": "Unrestricted data use",
-                    "suggested_fix": "Limit use and purpose",
-                    "severity": "Critical",
-                }
-            )
-
     survival_multiplier = 1.0
     for obligation in obligation_graph:
-        clause_text = obligation.get("clause_text", "").lower()
+        text_lower = obligation.get("clause_text", "").lower()
         if (
-            ("survive" in clause_text or "survival" in clause_text or "indefinite" in clause_text)
-            and ("indemn" in clause_text or "liabil" in clause_text or "confidential" in clause_text)
+            ("survive" in text_lower or "survival" in text_lower or "indefinite" in text_lower)
+            and ("indemn" in text_lower or "liabil" in text_lower or "default" in text_lower)
         ):
             survival_multiplier = max(survival_multiplier, 1.3)
-            red_flags.append(
-                {
-                    "category": "Survival",
-                    "description": obligation.get("clause_text"),
-                    "why_problematic": "Indefinite survival increases perpetual exposure",
-                    "suggested_fix": "Limit survival periods to reasonable years",
-                    "severity": "High",
-                }
-            )
 
-    for liability in liabilities:
-        clause_text = liability.get("clause_text", "").lower()
-        if "regulat" in clause_text and ("fine" in clause_text or "penalt" in clause_text) and (
-            "indemn" in clause_text or "indemnify" in clause_text
-        ):
-            red_flags.append(
-                {
-                    "category": "Regulatory",
-                    "description": liability.get("clause_text"),
-                    "why_problematic": "Pass-through of regulatory fines",
-                    "suggested_fix": "Remove pass-through or add cap",
-                    "severity": "Critical",
-                }
-            )
+    control_imbalance = any(
+        "sole discretion" in (obligation.get("clause_text", "").lower())
+        or "exclusive right" in (obligation.get("clause_text", "").lower())
+        for obligation in obligation_graph
+    )
 
-    control_imbalance = False
-    for obligation in obligation_graph:
-        clause_text = obligation.get("clause_text", "").lower()
-        for control_topic in CONTROL_TOPICS:
-            if control_topic in clause_text and (
-                "sole" in clause_text or "exclusive" in clause_text or "shall control" in clause_text
-            ):
-                control_imbalance = True
-                red_flags.append(
-                    {
-                        "category": "Control",
-                        "description": obligation.get("clause_text"),
-                        "why_problematic": f"Control over {control_topic} by one party",
-                        "suggested_fix": "Share control or require consent",
-                        "severity": "High",
-                    }
-                )
-
-    metrics = {
+    return {
         "red_flags": red_flags,
         "asymmetry_ratio": asym_ratio,
         "asymmetry_severity": asym_flag,
@@ -307,5 +322,3 @@ def detect_red_flags(
         "survival_multiplier": survival_multiplier,
         "control_imbalance": control_imbalance,
     }
-
-    return metrics

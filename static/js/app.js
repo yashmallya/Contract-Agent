@@ -144,10 +144,10 @@ function displayResults(data) {
             <div class="clause-item ${clause.severity.toLowerCase()}">
                 <h4>${clause.risk_type}</h4>
                 <span class="severity-badge ${clause.severity.toLowerCase()}">${clause.severity}</span>
-                <p><strong>Clause:</strong></p>
+                <p><strong>Original clause:</strong></p>
                 <p>"${clause.clause_text.substring(0, 200)}${clause.clause_text.length > 200 ? '...' : ''}"</p>
-                <p><strong>Reason:</strong> ${clause.reason}</p>
-                <p><strong>Recommendation:</strong> ${clause.recommendation}</p>
+                <p><strong>What this means:</strong> ${clause.reason || clause.plain_english || 'This clause creates a lease obligation.'}</p>
+                <p><strong>Resolution:</strong> ${clause.resolution || clause.recommendation || 'Ask for this clause to be narrowed and clarified in writing.'}</p>
             </div>
         `).join('');
     } else {
@@ -160,9 +160,9 @@ function displayResults(data) {
         redFlagsList.innerHTML = data.red_flags.map(flag => `
             <div class="flag-item">
                 <h4>🚩 ${flag.category}</h4>
-                <p><strong>Description:</strong> ${flag.description}</p>
-                <p><strong>Why problematic:</strong> ${flag.why_problematic}</p>
-                <p><strong>Suggested fix:</strong> ${flag.suggested_fix}</p>
+                <p><strong>Original clause:</strong> ${flag.description}</p>
+                <p><strong>What this means:</strong> ${flag.why_problematic || flag.plain_english || ''}</p>
+                <p><strong>Resolution:</strong> ${flag.resolution || flag.suggested_fix || ''}</p>
             </div>
         `).join('');
     } else {

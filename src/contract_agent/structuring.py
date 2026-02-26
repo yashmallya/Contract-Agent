@@ -9,6 +9,29 @@ import re
 
 SECTION_HEADINGS = [
     "definitions",
+    "premises",
+    "lease term",
+    "term",
+    "rent",
+    "base rent",
+    "additional rent",
+    "common area maintenance",
+    "cam charges",
+    "security deposit",
+    "maintenance",
+    "repairs",
+    "use of premises",
+    "assignment and subletting",
+    "subletting",
+    "default",
+    "events of default",
+    "remedies",
+    "holdover",
+    "renewal option",
+    "option to renew",
+    "utilities",
+    "insurance",
+    "taxes",
     "indemnity",
     "limitation",
     "limitation of liability",
@@ -36,6 +59,18 @@ CAP_PATTERN = re.compile(
     re.IGNORECASE,
 )
 MONEY_PATTERN = re.compile(r"\$([0-9,]+)")
+LEASE_CONTEXT_KEYWORDS = (
+    "lease",
+    "landlord",
+    "tenant",
+    "premises",
+    "rent",
+    "security deposit",
+    "sublease",
+    "holdover",
+    "cam",
+    "common area maintenance",
+)
 
 
 def extract_sections(text: str) -> List[Dict[str, str]]:
@@ -63,7 +98,7 @@ def extract_parties(text: str) -> Dict[str, Optional[str]]:
     parties = {"party_a": None, "party_b": None, "drafting_party": None}
 
     match = re.search(
-        r"this (agreement|contract)[\s\S]{0,80}?between\s+([^,\n]+?)\s+(?:\(.*?\))?\s+and\s+([^,\n]+)",
+        r"this (agreement|contract|lease|lease agreement)[\s\S]{0,80}?between\s+([^,\n]+?)\s+(?:\(.*?\))?\s+and\s+([^,\n]+?)(?:\s*\(|,|\.|\n|$)",
         text,
         re.IGNORECASE,
     )
@@ -89,6 +124,16 @@ def extract_parties(text: str) -> Dict[str, Optional[str]]:
 
 def _detect_obligation_type(sentence: str) -> Optional[str]:
     sentence_lower = sentence.lower()
+    if "rent" in sentence_lower or "additional rent" in sentence_lower or "cam" in sentence_lower:
+        return "lease_payment"
+    if "security deposit" in sentence_lower:
+        return "security_deposit"
+    if "repair" in sentence_lower or "maintenance" in sentence_lower:
+        return "maintenance"
+    if "default" in sentence_lower or "evict" in sentence_lower or "remed" in sentence_lower:
+        return "default"
+    if "assign" in sentence_lower or "sublease" in sentence_lower or "sublet" in sentence_lower:
+        return "assignment"
     if "indemnif" in sentence_lower:
         return "indemnity"
     if "liable" in sentence_lower or "liability" in sentence_lower:
@@ -154,3 +199,10 @@ def build_obligation_graph(
         graph.append(obligation)
 
     return graph
+
+
+def is_likely_lease(text: str) -> bool:
+    """Heuristic lease detector for summary/rule tuning."""
+    text_lower = text.lower()
+    hits = sum(1 for keyword in LEASE_CONTEXT_KEYWORDS if keyword in text_lower)
+    return hits >= 3

@@ -16,6 +16,25 @@ CLUSTERS = {
     "regulatory_ip": 20,
 }
 
+LEASE_FINANCIAL_CATEGORIES = {
+    "Rent Escalation",
+    "Pass-Through Costs",
+    "Major Repair Responsibility",
+    "Holdover Penalty",
+    "Late Charges",
+    "Deposit Forfeiture",
+}
+LEASE_TERMINATION_CATEGORIES = {
+    "Short Cure Window",
+    "Accelerated Rent",
+    "Transfer Restrictions",
+    "Relocation Right",
+}
+LEASE_STRUCTURE_CATEGORIES = {
+    "Personal Guarantee",
+    "Liability Cap",
+}
+
 
 def asymmetry_modifier(asymmetry_ratio: Any) -> float:
     try:
@@ -38,12 +57,15 @@ def asymmetry_modifier(asymmetry_ratio: Any) -> float:
 def compute_cluster_scores(metrics: Dict[str, Any]) -> Dict[str, float]:
     # Basic mapping from detected flags / metrics to cluster scores.
     clusters = {k: 0.0 for k in CLUSTERS.keys()}
+    red_flags = metrics.get("red_flags", [])
 
-    # Financial: compounded interest, acceleration, unbounded exposure
+    # Financial: cost volatility, late charge burden, and uncapped exposure
     if metrics.get("exposure_totals"):
         clusters["financial_exposure"] += min(
             CLUSTERS["financial_exposure"], sum(metrics["exposure_totals"].values()) / 1000.0
         )
+    if any(flag["category"] in LEASE_FINANCIAL_CATEGORIES for flag in red_flags):
+        clusters["financial_exposure"] += 10
     if metrics.get("survival_multiplier", 1.0) > 1.0:
         clusters["financial_exposure"] += 5
     if metrics.get("control_imbalance"):
@@ -67,16 +89,21 @@ def compute_cluster_scores(metrics: Dict[str, Any]) -> Dict[str, float]:
         clusters["liability_structure"] += 18
     if metrics.get("uncapped_parties"):
         clusters["liability_structure"] += 15
+    if any(flag["category"] in LEASE_STRUCTURE_CATEGORIES for flag in red_flags):
+        clusters["liability_structure"] += 8
 
     # Termination and lock-in
-    if any(flag["category"] == "Termination" for flag in metrics.get("red_flags", [])):
+    if any(
+        flag["category"] == "Termination" or flag["category"] in LEASE_TERMINATION_CATEGORIES
+        for flag in red_flags
+    ):
         clusters["termination_lockin"] += 12
     if metrics.get("asymmetry_severity") == "Critical":
         clusters["termination_lockin"] += 5
 
-    # Regulatory & IP
-    for red_flag in metrics.get("red_flags", []):
-        if red_flag["category"] in ("Regulatory", "IP", "Data"):
+    # Structural legal risk
+    for red_flag in red_flags:
+        if red_flag["category"] in ("Regulatory", "IP", "Data", "Personal Guarantee", "Indemnity"):
             clusters["regulatory_ip"] += 10
 
     # Cap cluster values at defined maxima

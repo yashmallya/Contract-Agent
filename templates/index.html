@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Contract Intelligence Analyzer</title>
+    <title>Lease Contract Vetting Analyzer</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>⚖️ Contract Intelligence Analyzer</h1>
-            <p>Automated contract risk analysis powered by AI</p>
+            <h1>🏢 Lease Contract Vetting Analyzer</h1>
+            <p>Plain-language lease risk analysis with actionable resolutions</p>
         </header>
 
         <main>
@@ -23,7 +23,7 @@
             <!-- Upload Tab -->
             <section id="upload" class="tab-content active">
                 <div class="upload-box">
-                    <h2>Upload Contract</h2>
+                    <h2>Upload Lease</h2>
                     <p>Supported formats: PDF, DOCX, DOC, TXT (Max 50MB)</p>
                     <div class="drag-drop-area" id="dragDropArea">
                         <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -39,8 +39,8 @@
             <!-- Paste Tab -->
             <section id="paste" class="tab-content">
                 <div class="paste-box">
-                    <h2>Paste Contract Text</h2>
-                    <textarea id="contractText" placeholder="Paste your contract text here..." rows="15"></textarea>
+                    <h2>Paste Lease Text</h2>
+                    <textarea id="contractText" placeholder="Paste your lease contract text here..." rows="15"></textarea>
                     <button class="analyze-btn" onclick="analyzePastedText()">Analyze Text</button>
                 </div>
             </section>
@@ -48,19 +48,19 @@
             <!-- Loading Spinner -->
             <div id="loadingSpinner" class="loading-spinner" style="display:none;">
                 <div class="spinner"></div>
-                <p>Analyzing contract...</p>
+                <p>Analyzing lease terms...</p>
             </div>
 
             <!-- Results Section -->
             <section id="resultsSection" class="results-section" style="display:none;">
                 <div class="results-header">
-                    <h2>Analysis Results</h2>
+                    <h2>Lease Vetting Results</h2>
                     <button class="reset-btn" onclick="resetAnalysis()">← New Analysis</button>
                 </div>
 
                 <!-- Summary Card -->
                 <div id="summaryCard" class="card summary-card">
-                    <h3>Contract Summary</h3>
+                    <h3>Lease Summary</h3>
                     <p id="summaryText"></p>
                 </div>
 
@@ -80,20 +80,20 @@
 
                 <!-- Liability Clauses -->
                 <section id="liabilitySection" class="results-card">
-                    <h3 class="section-title">📋 Identified Liability Clauses</h3>
+                    <h3 class="section-title">📋 Potential Lease Liabilities</h3>
                     <div id="liabilityList" class="clause-list"></div>
                 </section>
 
                 <!-- Red Flags -->
                 <section id="redFlagsSection" class="results-card">
-                    <h3 class="section-title">🚩 Red Flags Detected</h3>
+                    <h3 class="section-title">🚩 Lease Risks & Resolutions</h3>
                     <div id="redFlagsList" class="flag-list"></div>
                 </section>
             </section>
         </main>
 
         <footer>
-            <p>&copy; 2026 Contract Intelligence System | Production-Grade Risk Analysis</p>
+            <p>&copy; 2026 Lease Intelligence System | Plain-Language Risk Vetting</p>
         </footer>
     </div>
 
