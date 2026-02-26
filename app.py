@@ -2,6 +2,7 @@
 
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Callable
 
@@ -13,11 +14,17 @@ from run_agent import analyze_contract
 
 MAX_UPLOAD_SIZE_BYTES = 50 * 1024 * 1024
 ALLOWED_EXTENSIONS = {"txt", "pdf", "docx", "doc"}
+BASE_DIR = Path(__file__).resolve().parent
+DEFAULT_UPLOAD_DIR = Path(tempfile.gettempdir()) / "contract-agent-uploads"
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    template_folder=str(BASE_DIR / "templates"),
+    static_folder=str(BASE_DIR / "static"),
+)
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_SIZE_BYTES
-app.config["UPLOAD_FOLDER"] = str(Path(__file__).resolve().parent / "uploads")
-Path(app.config["UPLOAD_FOLDER"]).mkdir(exist_ok=True)
+app.config["UPLOAD_FOLDER"] = os.environ.get("UPLOAD_FOLDER", str(DEFAULT_UPLOAD_DIR))
+Path(app.config["UPLOAD_FOLDER"]).mkdir(parents=True, exist_ok=True)
 
 
 def _json_error(message: str, status_code: int):

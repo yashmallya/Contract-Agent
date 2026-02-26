@@ -4,7 +4,16 @@
     {
       "src": "app.py",
       "use": "@vercel/python",
-      "config": { "maxLambdaSize": "50mb" }
+      "config": {
+        "runtime": "python3.12",
+        "maxLambdaSize": "50mb",
+        "includeFiles": [
+          "run_agent.py",
+          "src/**",
+          "templates/**",
+          "static/**"
+        ]
+      }
     }
   ],
   "routes": [
