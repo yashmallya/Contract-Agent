@@ -6,6 +6,10 @@ authors = ["Your Name <you@example.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.10"
+flask = "^3.0.0"
+PyPDF2 = "^4.0.0"
+python-docx = "^0.8.11"
+werkzeug = "^3.0.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
