@@ -9,8 +9,5 @@
   ],
   "routes": [
     { "src": "/(.*)", "dest": "app.py" }
-  ],
-  "env": {
-    "VERCEL_PYTHON_VERSION": "3.9"
-  }
+  ]
 }
