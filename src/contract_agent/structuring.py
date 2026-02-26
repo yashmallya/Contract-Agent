@@ -1,144 +1,156 @@
-"""Document Structuring Agent
+"""Document Structuring Agent.
 
 Performs structural parsing (layer 1) including party extraction and
 building a machine-readable obligation graph.
 """
 
-from typing import List, Dict, Tuple, Optional
+from typing import Dict, List, Optional
 import re
+
+SECTION_HEADINGS = [
+    "definitions",
+    "indemnity",
+    "limitation",
+    "limitation of liability",
+    "termination",
+    "payment",
+    "governing law",
+    "intellectual property",
+    "confidentiality",
+    "warranties",
+    "dispute",
+    "force majeure",
+    "assignment",
+    "change of control",
+]
+
+SECTION_PATTERN = re.compile(
+    r"(^|\n)([A-Z][A-Za-z0-9 \-]{1,80})\n[-=]{2,}|(^|\n)(\b(?:"
+    + "|".join(SECTION_HEADINGS)
+    + r")\b)[:\n]",
+    re.IGNORECASE,
+)
+SENTENCE_SPLIT_PATTERN = re.compile(r"(?<=[\.!?])\s+")
+CAP_PATTERN = re.compile(
+    r"cap(?:s)?\s*(?:of)?\s*(?:liability)?\s*(?:at|to|=)?\s*\$?([0-9,]+)",
+    re.IGNORECASE,
+)
+MONEY_PATTERN = re.compile(r"\$([0-9,]+)")
 
 
 def extract_sections(text: str) -> List[Dict[str, str]]:
-    """Naive section splitter based on common headings and keywords.
-
-    Returns a list of {type, text}. This is intentionally lightweight; the
-    downstream agents expect a list of segments to analyze.
-    """
-    headings = [
-        'definitions', 'indemnity', 'limitation', 'limitation of liability',
-        'termination', 'payment', 'governing law', 'intellectual property',
-        'confidentiality', 'warranties', 'dispute', 'force majeure',
-        'assignment', 'change of control'
-    ]
+    """Naive section splitter based on common headings and keywords."""
+    matches = list(SECTION_PATTERN.finditer(text))
+    if not matches:
+        return [{"type": "full_text", "text": text}]
 
     segments: List[Dict[str, str]] = []
-    # Try splitting by common heading lines
-    pattern = re.compile(r"(^|\n)([A-Z][A-Za-z0-9 \-]{1,80})\n[-=]{2,}|(^|\n)(\b(?:" + '|'.join(headings) + r")\b)[:\n]", re.IGNORECASE)
-    last = 0
-    matches = list(pattern.finditer(text))
-    if not matches:
-        return [{'type': 'full_text', 'text': text}]
-
-    for i, m in enumerate(matches):
-        start = m.start()
-        heading = (m.group(2) or m.group(4) or '').strip()
-        # previous content
+    for i, match in enumerate(matches):
+        start = match.start()
+        heading = (match.group(2) or match.group(4) or "").strip()
         if i == 0 and start > 0:
-            segments.append({'type': 'prelude', 'text': text[0:start].strip()})
-        # find end = next match start or end of text
-        end = matches[i+1].start() if i+1 < len(matches) else len(text)
+            segments.append({"type": "prelude", "text": text[0:start].strip()})
+
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
         content = text[start:end].strip()
-        segments.append({'type': heading.lower() or 'section', 'text': content})
+        segments.append({"type": heading.lower() or "section", "text": content})
+
     return segments
 
 
 def extract_parties(text: str) -> Dict[str, Optional[str]]:
-    """Try to extract Party A and Party B names and drafting party.
+    """Try to extract Party A and Party B names and drafting party."""
+    parties = {"party_a": None, "party_b": None, "drafting_party": None}
 
-    Uses heuristics: look for "This Agreement is between X and Y" or
-    "between X (\"Party A\") and Y (\"Party B\")" patterns.
-    """
-    parties = {'party_a': None, 'party_b': None, 'drafting_party': None}
-    # common pattern
-    m = re.search(r"this (agreement|contract)[\s\S]{0,80}?between\s+([^,\n]+?)\s+(?:\(.*?\))?\s+and\s+([^,\n]+)", text, re.IGNORECASE)
-    if m:
-        parties['party_a'] = m.group(2).strip()
-        parties['party_b'] = m.group(3).strip()
+    match = re.search(
+        r"this (agreement|contract)[\s\S]{0,80}?between\s+([^,\n]+?)\s+(?:\(.*?\))?\s+and\s+([^,\n]+)",
+        text,
+        re.IGNORECASE,
+    )
+    if match:
+        parties["party_a"] = match.group(2).strip()
+        parties["party_b"] = match.group(3).strip()
         return parties
 
-    # alternative: look for "Party A" labelled
-    m2 = re.findall(r"([A-Z][A-Za-z0-9 &.,\-]{2,80})\s*\((?:Party )?A\)", text)
-    if m2:
-        parties['party_a'] = m2[0].strip()
-    m3 = re.findall(r"([A-Z][A-Za-z0-9 &.,\-]{2,80})\s*\((?:Party )?B\)", text)
-    if m3:
-        parties['party_b'] = m3[0].strip()
+    party_a_matches = re.findall(r"([A-Z][A-Za-z0-9 &.,\-]{2,80})\s*\((?:Party )?A\)", text)
+    if party_a_matches:
+        parties["party_a"] = party_a_matches[0].strip()
 
-    # Infer drafting party by searching for addresses like "drafted by" or "prepared by"
-    m4 = re.search(r"drafted by\s+([A-Z][A-Za-z0-9 &.,\-]{2,80})", text, re.IGNORECASE)
-    if m4:
-        parties['drafting_party'] = m4.group(1).strip()
+    party_b_matches = re.findall(r"([A-Z][A-Za-z0-9 &.,\-]{2,80})\s*\((?:Party )?B\)", text)
+    if party_b_matches:
+        parties["party_b"] = party_b_matches[0].strip()
+
+    drafted_by = re.search(r"drafted by\s+([A-Z][A-Za-z0-9 &.,\-]{2,80})", text, re.IGNORECASE)
+    if drafted_by:
+        parties["drafting_party"] = drafted_by.group(1).strip()
 
     return parties
 
 
-def build_obligation_graph(segments: List[Dict[str, str]], parties: Dict[str, Optional[str]]) -> List[Dict[str, object]]:
-    """Build a lightweight obligation graph from segments.
+def _detect_obligation_type(sentence: str) -> Optional[str]:
+    sentence_lower = sentence.lower()
+    if "indemnif" in sentence_lower:
+        return "indemnity"
+    if "liable" in sentence_lower or "liability" in sentence_lower:
+        return "liability"
+    if "terminate" in sentence_lower or "termination" in sentence_lower:
+        return "termination"
+    if "payment" in sentence_lower or "fee" in sentence_lower or "invoice" in sentence_lower:
+        return "payment"
+    return None
 
-    For each sentence, detect obligated party, benefiting party, obligation type,
-    financial exposure (if mentioned), duration and cap.
-    This returns a list of obligation objects as described in the spec.
-    """
+
+def build_obligation_graph(
+    segments: List[Dict[str, str]], parties: Dict[str, Optional[str]]
+) -> List[Dict[str, object]]:
+    """Build a lightweight obligation graph from segmented contract text."""
+    party_names = [name for name in (parties.get("party_a"), parties.get("party_b")) if name]
+    text = "\n".join(segment.get("text", "") for segment in segments)
+    sentences = [sentence.strip() for sentence in SENTENCE_SPLIT_PATTERN.split(text) if sentence.strip()]
+
     graph: List[Dict[str, object]] = []
-    party_names = [p for p in (parties.get('party_a'), parties.get('party_b')) if p]
-
-    # tokenize sentences simply
-    text = '\n'.join(s.get('text', '') for s in segments)
-    import re as _re
-    sentences = [s.strip() for s in _re.split(r'(?<=[\.!?])\s+', text) if s.strip()]
-
-    for s in sentences:
-        obj = {
-            'clause_text': s,
-            'obligated_party': None,
-            'benefiting_party': None,
-            'obligation_type': None,
-            'financial_exposure': None,
-            'duration': None,
-            'cap': None,
-            'exceptions': []
+    for sentence in sentences:
+        sentence_lower = sentence.lower()
+        obligation = {
+            "clause_text": sentence,
+            "obligated_party": None,
+            "benefiting_party": None,
+            "obligation_type": None,
+            "financial_exposure": None,
+            "duration": None,
+            "cap": None,
+            "exceptions": [],
         }
 
-        # obligated party heuristics
-        for pname in party_names:
-            if pname and pname.lower() in s.lower():
-                # naive: if name precedes 'shall' assume obligated
-                if 'shall' in s.lower() or 'must' in s.lower() or 'will' in s.lower() or 'agrees to' in s.lower():
-                    obj['obligated_party'] = pname
-                    # other party benefits
-                    other = [x for x in party_names if x != pname]
-                    obj['benefiting_party'] = other[0] if other else None
+        for party_name in party_names:
+            if party_name and party_name.lower() in sentence_lower:
+                if (
+                    "shall" in sentence_lower
+                    or "must" in sentence_lower
+                    or "will" in sentence_lower
+                    or "agrees to" in sentence_lower
+                ):
+                    obligation["obligated_party"] = party_name
+                    other_parties = [name for name in party_names if name != party_name]
+                    obligation["benefiting_party"] = other_parties[0] if other_parties else None
                     break
 
-        # fallback: presence of 'shall' assign to drafter if known
-        if not obj['obligated_party'] and ('shall' in s.lower() or 'must' in s.lower()):
-            obj['obligated_party'] = parties.get('drafting_party')
+        if not obligation["obligated_party"] and ("shall" in sentence_lower or "must" in sentence_lower):
+            obligation["obligated_party"] = parties.get("drafting_party")
 
-        # obligation type detection
-        if 'indemnif' in s.lower():
-            obj['obligation_type'] = 'indemnity'
-        elif 'liable' in s.lower() or 'liability' in s.lower():
-            obj['obligation_type'] = 'liability'
-        elif 'terminate' in s.lower() or 'termination' in s.lower():
-            obj['obligation_type'] = 'termination'
-        elif 'payment' in s.lower() or 'fee' in s.lower() or 'invoice' in s.lower():
-            obj['obligation_type'] = 'payment'
+        obligation["obligation_type"] = _detect_obligation_type(sentence)
 
-        # cap detection
-        cap_match = _re.search(r'cap(?:s)?\s*(?:of)?\s*(?:liability)?\s*(?:at|to|=)?\s*\$?([0-9,]+)', s, _re.IGNORECASE)
+        cap_match = CAP_PATTERN.search(sentence)
         if cap_match:
-            obj['cap'] = cap_match.group(1).replace(',', '')
+            obligation["cap"] = cap_match.group(1).replace(",", "")
 
-        # exceptions: look for 'except' or 'notwithstanding' clauses
-        if 'except' in s.lower() or 'notwithstanding' in s.lower():
-            obj['exceptions'].append(s)
+        if "except" in sentence_lower or "notwithstanding" in sentence_lower:
+            obligation["exceptions"].append(sentence)
 
-        # financial exposure detection (very coarse)
-        money = _re.search(r'\$([0-9,]+)', s)
-        if money:
-            obj['financial_exposure'] = money.group(1).replace(',', '')
+        money_match = MONEY_PATTERN.search(sentence)
+        if money_match:
+            obligation["financial_exposure"] = money_match.group(1).replace(",", "")
 
-        graph.append(obj)
+        graph.append(obligation)
 
     return graph
-
