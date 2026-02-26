@@ -74,8 +74,7 @@ Then deploy:
 vercel --prod
 ```
 
-Vercel routes all traffic to `api/index.py`, which imports the Flask app from
-`app.py`.
+Vercel routes all traffic to `app.py` (Flask entrypoint).
 
 Troubleshoot by running `vercel dev` locally and examining the function
 logs; common errors include missing packages or exceeding the size limit.
