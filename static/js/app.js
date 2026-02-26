@@ -53,8 +53,28 @@ fileInput.addEventListener('change', (e) => {
     }
 });
 
+function showError(message) {
+    const banner = document.getElementById('errorBanner');
+    if (!banner) {
+        alert('Error: ' + message);
+        return;
+    }
+    banner.textContent = message;
+    banner.style.display = 'block';
+}
+
+function clearError() {
+    const banner = document.getElementById('errorBanner');
+    if (!banner) {
+        return;
+    }
+    banner.textContent = '';
+    banner.style.display = 'none';
+}
+
 // Upload file
 function uploadFile(file) {
+    clearError();
     const formData = new FormData();
     formData.append('file', file);
 
@@ -68,23 +88,24 @@ function uploadFile(file) {
     .then(data => {
         showLoading(false);
         if (data.error) {
-            alert('Error: ' + data.error);
+            showError(data.error);
         } else {
             displayResults(data);
         }
     })
     .catch(error => {
         showLoading(false);
-        alert('Upload failed: ' + error);
+        showError('Upload failed: ' + error);
     });
 }
 
 // Analyze pasted text
 function analyzePastedText() {
+    clearError();
     const text = document.getElementById('contractText').value.trim();
 
     if (text.length === 0) {
-        alert('Please paste contract text');
+        showError('Please paste lease text.');
         return;
     }
 
@@ -101,14 +122,14 @@ function analyzePastedText() {
     .then(data => {
         showLoading(false);
         if (data.error) {
-            alert('Error: ' + data.error);
+            showError(data.error);
         } else {
             displayResults(data);
         }
     })
     .catch(error => {
         showLoading(false);
-        alert('Analysis failed: ' + error);
+        showError('Analysis failed: ' + error);
     });
 }
 
@@ -156,8 +177,10 @@ function getRiskUiState(score, riskLevel) {
 
 // Display results
 function displayResults(data) {
+    clearError();
+
     // Update summary
-    document.getElementById('summaryText').textContent = 
+    document.getElementById('summaryText').textContent =
         data.contract_summary || 'Contract analysis completed.';
 
     // Update risk score
@@ -238,6 +261,7 @@ function displayResults(data) {
 
 // Reset analysis
 function resetAnalysis() {
+    clearError();
     document.getElementById('resultsSection').style.display = 'none';
     document.getElementById('contractText').value = '';
     document.getElementById('fileInput').value = '';

@@ -1,9 +1,11 @@
 """Entry point for the Contract Agent system."""
 
+import json
 from pathlib import Path
 
 from src.contract_agent import (
     liability_extraction,
+    llm_reasoning,
     output,
     red_flag_detection,
     risk_scoring,
@@ -31,13 +33,16 @@ def analyze_contract(text: str) -> str:
     metrics = red_flag_detection.detect_red_flags(liabilities, obligation_graph)
     scoring = risk_scoring.score_contract(metrics)
 
-    return output.format_output(
+    deterministic_output = output.format_output(
         _build_summary(parties, liabilities, lease_context),
         liabilities,
         metrics,
         scoring.get("final_score", 0),
         scoring.get("risk_level", "Low"),
     )
+    base_result = json.loads(deterministic_output)
+    enhanced = llm_reasoning.enhance_analysis_with_llm(text, base_result)
+    return json.dumps(enhanced, indent=2)
 
 
 if __name__ == "__main__":

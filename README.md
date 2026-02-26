@@ -35,17 +35,47 @@ Production-grade contract intelligence with a multi-agent risk engine.
   (txt/pdf/docx). Returns JSON analysis.
 - `POST /api/analyze-text` – JSON `{ "text": "..." }`.
 
+## Gemini Reasoning Layer (No Fallback)
+
+The app uses Gemini for final reasoning output and plain-language resolutions.
+No deterministic fallback is used if Gemini is unavailable.
+
+Set these environment variables:
+
+```bash
+GEMINI_API_KEY=your_key_here
+GEMINI_MODEL=gemini-2.5-flash
+GEMINI_THINKING_BUDGET=1024
+GEMINI_MAX_TEXT_CHARS=30000
+```
+
+If `GEMINI_API_KEY` is missing/invalid or Gemini fails, analysis now returns
+an explicit error (shown in the UI) and does not fall back.
+
 ## Deployment on Vercel
 
-Add a `vercel.json` file (already included) with the Python build settings.
-Use the Vercel CLI to deploy:
+Set required environment variables first:
+
+```bash
+vercel env add GEMINI_API_KEY production
+vercel env add GEMINI_MODEL production
+vercel env add GEMINI_THINKING_BUDGET production
+vercel env add GEMINI_MAX_TEXT_CHARS production
+```
+
+Suggested values:
+- `GEMINI_MODEL`: `gemini-2.5-flash`
+- `GEMINI_THINKING_BUDGET`: `1024`
+- `GEMINI_MAX_TEXT_CHARS`: `30000`
+
+Then deploy:
 
 ```bash
 vercel --prod
 ```
 
-Vercel will treat `app.py` as a serverless function. Ensure `requirements.txt`
-lists all dependencies.
+Vercel routes all traffic to `api/index.py`, which imports the Flask app from
+`app.py`.
 
 Troubleshoot by running `vercel dev` locally and examining the function
 logs; common errors include missing packages or exceeding the size limit.

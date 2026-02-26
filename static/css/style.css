@@ -55,6 +55,17 @@ main {
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
 }
 
+.error-banner {
+    background: #fee2e2;
+    border: 1px solid #fca5a5;
+    color: #991b1b;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 20px;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
 /* Tabs */
 .tabs {
     display: flex;
