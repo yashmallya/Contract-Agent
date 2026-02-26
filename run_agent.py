@@ -10,12 +10,24 @@ from src.contract_agent import (
 
 
 def analyze_contract(text: str) -> str:
+    # Layer 1: structural parsing
     sections = structuring.extract_sections(text)
-    liabilities = liability_extraction.extract_liabilities(sections)
-    red_flags = red_flag_detection.detect_red_flags(liabilities, sections)
-    scoring = risk_scoring.score_contract(red_flags)
-    summary = ""  # could be built from sections
-    return output.format_output(summary, liabilities, red_flags, scoring.get('overall_risk_score', 0), scoring.get('risk_level', 'Low'))
+    parties = structuring.extract_parties(text)
+    obligation_graph = structuring.build_obligation_graph(sections, parties)
+
+    # Layer 2: liability extraction
+    liabilities = liability_extraction.extract_liabilities(obligation_graph)
+
+    # Layer 3-4: red flags (includes illusory cap detection, asymmetry, etc.)
+    metrics = red_flag_detection.detect_red_flags(liabilities, obligation_graph)
+
+    # Layer 5: scoring
+    scoring = risk_scoring.score_contract(metrics)
+
+    # Build a short summary
+    summary = f"Parties: {parties.get('party_a') or 'Unknown'} vs {parties.get('party_b') or 'Unknown'}; Detected {len(liabilities)} liability clauses."
+
+    return output.format_output(summary, liabilities, metrics, scoring.get('final_score', 0), scoring.get('risk_level', 'Low'))
 
 
 if __name__ == '__main__':

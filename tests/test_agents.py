@@ -10,7 +10,13 @@ from src.contract_agent import (
 
 
 def test_placeholder():
-    assert structuring.extract_sections("") == []
-    assert liability_extraction.extract_liabilities([]) == []
-    assert red_flag_detection.detect_red_flags([], []) == []
-    assert risk_scoring.score_contract([])["overall_risk_score"] == 0
+    text = "This Agreement is between Alpha Co and Beta LLC. Alpha Co shall indemnify Beta LLC for any third-party claims. Liability cap of $10000 except for data breach."
+    sections = structuring.extract_sections(text)
+    parties = structuring.extract_parties(text)
+    graph = structuring.build_obligation_graph(sections, parties)
+    liabilities = liability_extraction.extract_liabilities(graph)
+    metrics = red_flag_detection.detect_red_flags(liabilities, graph)
+    scoring = risk_scoring.score_contract(metrics)
+    assert isinstance(metrics, dict)
+    assert 'red_flags' in metrics
+    assert 'final_score' in scoring or 'final_score' in scoring
