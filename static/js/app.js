@@ -112,6 +112,48 @@ function analyzePastedText() {
     });
 }
 
+function getRiskUiState(score, riskLevel) {
+    const levelText = (riskLevel || '').toLowerCase();
+    if (levelText.includes('critical') || score >= 81) {
+        return {
+            key: 'critical',
+            badge: 'Critical',
+            explainer: 'High likelihood of expensive or hard-to-negotiate lease terms. Immediate revisions recommended.',
+            gaugeColor: '#ef4444',
+            barGradient: 'linear-gradient(90deg, #dc2626 0%, #ef4444 100%)',
+            cardGradient: 'linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%)'
+        };
+    }
+    if (score >= 61) {
+        return {
+            key: 'high',
+            badge: 'High',
+            explainer: 'Several lease terms may create meaningful financial or legal downside.',
+            gaugeColor: '#f97316',
+            barGradient: 'linear-gradient(90deg, #ea580c 0%, #f97316 100%)',
+            cardGradient: 'linear-gradient(135deg, #9a3412 0%, #c2410c 100%)'
+        };
+    }
+    if (score >= 31) {
+        return {
+            key: 'moderate',
+            badge: 'Moderate',
+            explainer: 'Some clauses should be negotiated, but risk may be manageable with targeted edits.',
+            gaugeColor: '#f59e0b',
+            barGradient: 'linear-gradient(90deg, #d97706 0%, #f59e0b 100%)',
+            cardGradient: 'linear-gradient(135deg, #92400e 0%, #a16207 100%)'
+        };
+    }
+    return {
+        key: 'low',
+        badge: 'Low',
+        explainer: 'No major risk patterns detected in the analyzed lease clauses.',
+        gaugeColor: '#10b981',
+        barGradient: 'linear-gradient(90deg, #059669 0%, #10b981 100%)',
+        cardGradient: 'linear-gradient(135deg, #065f46 0%, #047857 100%)'
+    };
+}
+
 // Display results
 function displayResults(data) {
     // Update summary
@@ -119,23 +161,39 @@ function displayResults(data) {
         data.contract_summary || 'Contract analysis completed.';
 
     // Update risk score
-    const score = data.overall_risk_score || 0;
+    const rawScore = Number(data.overall_risk_score || 0);
+    const score = Number.isFinite(rawScore) ? rawScore : 0;
     const riskLevel = data.risk_level || 'Unknown';
-    
-    document.getElementById('scoreCircle').textContent = score;
-    document.getElementById('riskLevel').textContent = riskLevel;
 
-    // Color code the risk level
-    const scoreCard = document.querySelector('.risk-score-card');
-    if (score >= 81) {
-        scoreCard.style.background = 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)';
-    } else if (score >= 61) {
-        scoreCard.style.background = 'linear-gradient(135deg, #f97316 0%, #c2410c 100%)';
-    } else if (score >= 31) {
-        scoreCard.style.background = 'linear-gradient(135deg, #eab308 0%, #a16207 100%)';
-    } else {
-        scoreCard.style.background = 'linear-gradient(135deg, #10b981 0%, #047857 100%)';
-    }
+    const scoreForDisplay = Number.isInteger(score) ? score.toString() : score.toFixed(1);
+    document.getElementById('scoreCircle').textContent = scoreForDisplay;
+    document.getElementById('riskLevel').textContent = riskLevel;
+    document.getElementById('riskExplainer').textContent = getRiskUiState(score, riskLevel).explainer;
+    document.getElementById('redFlagCount').textContent = (data.red_flags || []).length;
+    document.getElementById('liabilityCount').textContent = (data.liability_clauses || []).length;
+
+    const uiState = getRiskUiState(score, riskLevel);
+    const scoreCard = document.getElementById('riskScoreCard');
+    scoreCard.classList.remove('risk-low', 'risk-moderate', 'risk-high', 'risk-critical');
+    scoreCard.classList.add(`risk-${uiState.key}`);
+    scoreCard.style.background = uiState.cardGradient;
+
+    const riskBadge = document.getElementById('riskBadge');
+    riskBadge.textContent = uiState.badge;
+    riskBadge.classList.remove('low', 'moderate', 'high', 'critical');
+    riskBadge.classList.add(uiState.key);
+
+    const scoreBarFill = document.getElementById('scoreBarFill');
+    const gaugeScore = Math.max(0, Math.min(score, 100));
+    scoreBarFill.style.width = `${gaugeScore}%`;
+    scoreBarFill.style.background = uiState.barGradient;
+
+    const scoreGaugeFill = document.getElementById('scoreGaugeFill');
+    const radius = 52;
+    const circumference = 2 * Math.PI * radius;
+    scoreGaugeFill.style.strokeDasharray = `${circumference}`;
+    scoreGaugeFill.style.strokeDashoffset = `${circumference * (1 - gaugeScore / 100)}`;
+    scoreGaugeFill.style.stroke = uiState.gaugeColor;
 
     // Display liability clauses
     const liabilityList = document.getElementById('liabilityList');

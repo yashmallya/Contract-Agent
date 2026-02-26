@@ -66,13 +66,33 @@
 
                 <!-- Overall Risk Score -->
                 <div class="risk-score-container">
-                    <div class="risk-score-card">
-                        <h3>Overall Risk Score</h3>
+                    <div class="risk-score-card risk-low" id="riskScoreCard">
+                        <div class="risk-score-header">
+                            <h3>Overall Risk Score</h3>
+                            <span id="riskBadge" class="risk-pill low">Low</span>
+                        </div>
                         <div class="score-display">
-                            <div id="scoreCircle" class="score-circle">0</div>
+                            <div class="score-gauge-wrap">
+                                <svg class="score-gauge" viewBox="0 0 120 120" aria-hidden="true">
+                                    <circle class="score-track" cx="60" cy="60" r="52"></circle>
+                                    <circle id="scoreGaugeFill" class="score-fill" cx="60" cy="60" r="52"></circle>
+                                </svg>
+                                <div class="score-gauge-center">
+                                    <div id="scoreCircle" class="score-circle">0</div>
+                                    <div class="score-scale">/100+</div>
+                                </div>
+                            </div>
                             <div class="score-details">
                                 <p id="riskLevel" class="risk-level">Low</p>
-                                <p class="score-caption">Risk Rating</p>
+                                <p id="riskExplainer" class="risk-explainer">Low legal and financial exposure in detected lease terms.</p>
+                                <div class="risk-metrics">
+                                    <div class="metric-chip"><strong id="redFlagCount">0</strong> red flags</div>
+                                    <div class="metric-chip"><strong id="liabilityCount">0</strong> liability items</div>
+                                </div>
+                                <div class="score-bar">
+                                    <div id="scoreBarFill" class="score-bar-fill"></div>
+                                </div>
+                                <p class="score-caption">Gauge is capped at 100 for readability. Scores above 100 indicate compounding structural risk.</p>
                             </div>
                         </div>
                     </div>
