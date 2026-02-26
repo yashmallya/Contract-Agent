@@ -126,4 +126,7 @@ def analyze_text():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    # debug off by default; environment variable can override
+    debug_flag = os.environ.get('FLASK_DEBUG', 'False').lower() in ('1','true','yes')
+    port = int(os.environ.get('PORT', 5000))
+    app.run(debug=debug_flag, port=port)
